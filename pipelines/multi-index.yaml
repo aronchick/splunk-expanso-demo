@@ -1,0 +1,162 @@
+---
+# Scenario B: Multi-Index Routing
+# Route events by sourcetype to different Splunk indexes
+#
+# Usage:
+#   export SPLUNK_HEC_ENDPOINT=https://your-splunk:8088
+#   export SPLUNK_HEC_TOKEN=your-hec-token
+#   expanso-edge run pipelines/multi-index.yaml
+
+name: multi-index-pipeline
+type: pipeline
+
+config:
+  input:
+    generate:
+      interval: ${EMIT_INTERVAL:500ms}
+      mapping: |
+        # Generate mixed log types with weighted distribution
+        let type_roll = random_int(max: 100)
+
+        root = if $type_roll < 70 {
+          # 70% Apache access logs
+          let methods = ["GET", "GET", "GET", "POST", "PUT", "DELETE"]
+          let paths = ["/api/users", "/api/orders", "/api/products", "/login", "/health"]
+          let statuses = [200, 200, 200, 201, 301, 400, 404, 500]
+          let ips = ["192.168.1.100", "10.0.0.50", "172.16.0.1"]
+
+          let ip = $ips.index(random_int(max: 2))
+          let method = $methods.index(random_int(max: 5))
+          let path = $paths.index(random_int(max: 4))
+          let status = $statuses.index(random_int(max: 7))
+
+          {
+            "_raw": "%s - - [%s] \"%s %s HTTP/1.1\" %s %s".format(
+              $ip, now().ts_strftime("%d/%b/%Y:%H:%M:%S -0800"),
+              $method, $path, $status.string(), random_int(min: 100, max: 50000).string()
+            ),
+            "sourcetype": "access_combined",
+            "source": "/var/log/httpd/access_log"
+          }
+        } else if $type_roll < 85 {
+          # 15% Apache error logs
+          let levels = ["notice", "warn", "error", "crit"]
+          let messages = [
+            "ModSecurity: Warning. Pattern match detected",
+            "File does not exist: /var/www/html/admin",
+            "SSL handshake failed: SSL alert number 40",
+            "client denied by server configuration"
+          ]
+          let level = $levels.index(random_int(max: 3))
+          let msg = $messages.index(random_int(max: 3))
+
+          {
+            "_raw": "[%s] [%s] [pid %s] %s".format(
+              now().ts_strftime("%d/%b/%Y:%H:%M:%S -0800"),
+              $level, random_int(min: 1000, max: 9999).string(), $msg
+            ),
+            "sourcetype": "apache_error",
+            "source": "/var/log/httpd/error_log",
+            "level": $level
+          }
+        } else {
+          # 15% Syslog
+          let facilities = ["kern", "user", "daemon", "auth", "syslog"]
+          let severities = ["info", "notice", "warning", "error"]
+          let messages = [
+            "Connection established",
+            "User login successful",
+            "Service restarted",
+            "Failed password attempt"
+          ]
+          let facility = $facilities.index(random_int(max: 4))
+          let severity = $severities.index(random_int(max: 3))
+          let msg = $messages.index(random_int(max: 3))
+
+          {
+            "_raw": "<%s>%s %s %s[%s]: %s".format(
+              random_int(max: 191).string(),
+              now().ts_strftime("%b %d %H:%M:%S"),
+              env("NODE_NAME").or("server-01"),
+              $facility, random_int(min: 1000, max: 9999).string(), $msg
+            ),
+            "sourcetype": "syslog",
+            "source": "/var/log/messages",
+            "facility": $facility,
+            "severity": $severity
+          }
+        }
+
+        root.host = env("NODE_NAME").or("edge-mixed-01")
+
+  pipeline:
+    processors:
+      - bloblang: |
+          # Route by sourcetype to appropriate index
+          meta "index" = if this.sourcetype == "access_combined" {
+            "web"
+          } else if this.sourcetype == "apache_error" {
+            "security"
+          } else {
+            "os"
+          }
+
+          meta "sourcetype" = this.sourcetype
+          meta "host" = this.host
+          meta "source" = this.source
+
+          root = this
+
+  output:
+    switch:
+      cases:
+        - check: meta("index") == "web"
+          output:
+            http_client:
+              url: ${SPLUNK_HEC_ENDPOINT:http://localhost:8088}/services/collector/event
+              verb: POST
+              headers:
+                Authorization: "Splunk ${SPLUNK_HEC_TOKEN:changeme}"
+                Content-Type: application/json
+              processors:
+                - bloblang: |
+                    root.event = this._raw
+                    root.time = now().ts_unix()
+                    root.host = meta("host")
+                    root.source = meta("source")
+                    root.sourcetype = meta("sourcetype")
+                    root.index = "web"
+
+        - check: meta("index") == "security"
+          output:
+            http_client:
+              url: ${SPLUNK_HEC_ENDPOINT:http://localhost:8088}/services/collector/event
+              verb: POST
+              headers:
+                Authorization: "Splunk ${SPLUNK_HEC_TOKEN:changeme}"
+                Content-Type: application/json
+              processors:
+                - bloblang: |
+                    root.event = this._raw
+                    root.time = now().ts_unix()
+                    root.host = meta("host")
+                    root.source = meta("source")
+                    root.sourcetype = meta("sourcetype")
+                    root.index = "security"
+
+        - check: true
+          output:
+            http_client:
+              url: ${SPLUNK_HEC_ENDPOINT:http://localhost:8088}/services/collector/event
+              verb: POST
+              headers:
+                Authorization: "Splunk ${SPLUNK_HEC_TOKEN:changeme}"
+                Content-Type: application/json
+              processors:
+                - bloblang: |
+                    root.event = this._raw
+                    root.time = now().ts_unix()
+                    root.host = meta("host")
+                    root.source = meta("source")
+                    root.sourcetype = meta("sourcetype")
+                    root.index = "os"

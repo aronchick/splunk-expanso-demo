@@ -1,0 +1,101 @@
+<dashboard version="1.1" theme="dark">
+  <label>Security</label>
+  <description>Security events and error logs from Expanso Edge nodes</description>
+
+  <row>
+    <panel>
+      <title>Total Security Events</title>
+      <single>
+        <search>
+          <query>index=security | stats count</query>
+          <earliest>-24h@h</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Critical Events</title>
+      <single>
+        <search>
+          <query>index=security level=crit OR level=error | stats count</query>
+          <earliest>-24h@h</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0x65a637","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeValues">[10,50]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+    <panel>
+      <title>Failed Auth Attempts</title>
+      <single>
+        <search>
+          <query>index=security ("Failed" OR "failed" OR "unauthorized" OR "denied") | stats count</query>
+          <earliest>-24h@h</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="drilldown">none</option>
+        <option name="colorMode">block</option>
+        <option name="rangeColors">["0x65a637","0xf8be34","0xdc4e41"]</option>
+        <option name="rangeValues">[50,200]</option>
+        <option name="useColors">1</option>
+      </single>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Security Events Over Time</title>
+      <chart>
+        <search>
+          <query>index=security | rex field=_raw "\[(?&lt;level&gt;\w+)\]" | timechart span=1h count by level</query>
+          <earliest>-24h@h</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">area</option>
+        <option name="charting.chart.stackMode">stacked</option>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Events by Severity</title>
+      <chart>
+        <search>
+          <query>index=security | rex field=_raw "\[(?&lt;level&gt;\w+)\]" | stats count by level | sort - count</query>
+          <earliest>-24h@h</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">pie</option>
+      </chart>
+    </panel>
+    <panel>
+      <title>Events by Host</title>
+      <chart>
+        <search>
+          <query>index=security | stats count by host | sort - count | head 10</query>
+          <earliest>-24h@h</earliest>
+          <latest>now</latest>
+        </search>
+        <option name="charting.chart">bar</option>
+      </chart>
+    </panel>
+  </row>
+
+  <row>
+    <panel>
+      <title>Recent Critical Events</title>
+      <event>
+        <search>
+          <query>index=security level=crit OR level=error | head 50</query>
+          <earliest>-24h@h</earliest>
+          <latest>now</latest>
+        </search>
+      </event>
+    </panel>
+  </row>
+</dashboard>

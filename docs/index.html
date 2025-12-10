@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Expanso + Splunk | Edge Data Pipeline Demo</title>
+  <meta name="description" content="Replace Splunk Fat Forwarders with lightweight Expanso Edge pipelines. Faster data onboarding, intelligent routing, and edge aggregation.">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            'splunk-green': '#65A637',
+            'splunk-dark': '#1A1A1A',
+            'expanso': '#6366F1',
+            'expanso-dark': '#4F46E5',
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap');
+    body { font-family: 'Inter', sans-serif; }
+    code, pre, .mono { font-family: 'JetBrains Mono', monospace; }
+
+    .gradient-text {
+      background: linear-gradient(135deg, #65A637 0%, #6366F1 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .glow-green { box-shadow: 0 0 40px rgba(101, 166, 55, 0.2); }
+    .glow-purple { box-shadow: 0 0 40px rgba(99, 102, 241, 0.2); }
+
+    .terminal {
+      background: #0d1117;
+      border: 1px solid #30363d;
+    }
+    .terminal-header {
+      background: #161b22;
+      border-bottom: 1px solid #30363d;
+    }
+    .terminal-dot { width: 12px; height: 12px; border-radius: 50%; }
+    .dot-red { background: #ff5f56; }
+    .dot-yellow { background: #ffbd2e; }
+    .dot-green { background: #27c93f; }
+
+    @keyframes dataflow {
+      0% { transform: translateX(-100%); opacity: 0; }
+      10% { opacity: 1; }
+      90% { opacity: 1; }
+      100% { transform: translateX(100%); opacity: 0; }
+    }
+    .data-packet {
+      animation: dataflow 2s ease-in-out infinite;
+    }
+
+    .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: #1e293b; }
+    .custom-scrollbar::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+    .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #64748b; }
+
+    .scenario-tab {
+      transition: all 0.3s ease;
+    }
+    .scenario-tab.active {
+      background: linear-gradient(135deg, #65A637 0%, #6366F1 100%);
+    }
+    .scenario-tab:not(.active):hover {
+      background: #334155;
+    }
+  </style>
+</head>
+<body class="bg-slate-950 text-white antialiased">
+
+  <!-- Navigation -->
+  <nav class="fixed top-0 w-full bg-slate-950/90 backdrop-blur-lg z-50 border-b border-slate-800">
+    <div class="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 bg-gradient-to-br from-expanso to-expanso-dark rounded-lg flex items-center justify-center font-bold text-sm">E</div>
+          <span class="font-semibold">Expanso</span>
+        </div>
+        <span class="text-slate-600">+</span>
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 bg-splunk-green rounded flex items-center justify-center font-bold text-sm">S</div>
+          <span class="font-semibold">Splunk</span>
+        </div>
+      </div>
+      <div class="hidden md:flex items-center gap-6">
+        <a href="#demo" class="text-slate-400 hover:text-white transition">Demo</a>
+        <a href="#scenarios" class="text-slate-400 hover:text-white transition">Scenarios</a>
+        <a href="#pipelines" class="text-slate-400 hover:text-white transition">Pipelines</a>
+        <a href="https://github.com/expanso-io/splunk-edge-demo" class="bg-slate-800 hover:bg-slate-700 px-4 py-2 rounded-lg transition">GitHub</a>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Hero -->
+  <section class="min-h-screen flex items-center pt-20">
+    <div class="max-w-7xl mx-auto px-6 py-20">
+      <div class="grid lg:grid-cols-2 gap-16 items-center">
+        <div>
+          <div class="inline-flex items-center gap-2 bg-slate-800/50 border border-slate-700 rounded-full px-4 py-2 mb-8">
+            <span class="w-2 h-2 bg-splunk-green rounded-full animate-pulse"></span>
+            <span class="text-sm text-slate-300">Replace Fat Forwarders</span>
+          </div>
+          <h1 class="text-5xl lg:text-6xl font-black leading-tight mb-6">
+            <span class="gradient-text">Edge Data</span><br>
+            <span class="text-white">Pipelines</span>
+          </h1>
+          <p class="text-xl text-slate-400 mb-8 leading-relaxed">
+            <strong class="text-white">Expanso Edge</strong> replaces Splunk's heavyweight forwarders with
+            lightweight, intelligent pipelines. Faster onboarding, smarter routing, less bandwidth.
+          </p>
+
+          <div class="grid grid-cols-3 gap-4 mb-8">
+            <div class="bg-slate-800/50 rounded-xl p-4 text-center">
+              <div class="text-2xl font-bold text-splunk-green">64MB</div>
+              <div class="text-xs text-slate-500">vs 1-4GB HF</div>
+            </div>
+            <div class="bg-slate-800/50 rounded-xl p-4 text-center">
+              <div class="text-2xl font-bold text-expanso">99%</div>
+              <div class="text-xs text-slate-500">Bandwidth Saved</div>
+            </div>
+            <div class="bg-slate-800/50 rounded-xl p-4 text-center">
+              <div class="text-2xl font-bold text-green-500">5min</div>
+              <div class="text-xs text-slate-500">To Deploy</div>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap gap-4">
+            <a href="#demo" class="bg-gradient-to-r from-splunk-green to-expanso hover:opacity-90 px-8 py-4 rounded-xl font-semibold text-lg transition transform hover:scale-105">
+              Start Demo
+            </a>
+            <a href="#scenarios" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 px-8 py-4 rounded-xl font-semibold text-lg transition">
+              View Scenarios
+            </a>
+          </div>
+        </div>
+
+        <div class="relative">
+          <div class="bg-slate-900 rounded-2xl p-8 glow-purple">
+            <div class="text-center mb-6">
+              <span class="text-sm text-slate-500 uppercase tracking-wider">Architecture Comparison</span>
+            </div>
+            <div class="grid grid-cols-2 gap-6">
+              <div class="text-center">
+                <div class="text-xs text-slate-500 mb-3">Traditional</div>
+                <div class="bg-red-500/10 border border-red-500/30 rounded-lg p-4 mb-2">
+                  <div class="text-red-400 font-bold text-lg">Heavy Forwarder</div>
+                  <div class="text-red-300/70 text-xs mt-1">1-4 GB RAM</div>
+                </div>
+                <div class="text-slate-600 text-2xl">↓</div>
+                <div class="bg-slate-700/50 rounded-lg p-2 text-xs text-slate-400">Raw data shipped</div>
+              </div>
+              <div class="text-center">
+                <div class="text-xs text-slate-500 mb-3">Expanso</div>
+                <div class="bg-splunk-green/10 border border-splunk-green/30 rounded-lg p-4 mb-2">
+                  <div class="text-splunk-green font-bold text-lg">Edge Pipeline</div>
+                  <div class="text-splunk-green/70 text-xs mt-1">64 MB RAM</div>
+                </div>
+                <div class="text-slate-600 text-2xl">↓</div>
+                <div class="bg-expanso/20 rounded-lg p-2 text-xs text-expanso">Processed & routed</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Problem Cards -->
+  <section class="py-16 bg-slate-900/50">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="grid md:grid-cols-4 gap-6">
+        <div class="bg-slate-800/50 rounded-xl p-6 border border-slate-700 hover:border-red-500/30 transition">
+          <div class="w-10 h-10 bg-red-500/10 rounded-lg flex items-center justify-center mb-4">
+            <svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+          </div>
+          <h3 class="font-bold mb-2">Resource Hogs</h3>
+          <p class="text-sm text-slate-400">Heavy Forwarders consume 1-4GB RAM per instance</p>
+        </div>
+        <div class="bg-slate-800/50 rounded-xl p-6 border border-slate-700 hover:border-orange-500/30 transition">
+          <div class="w-10 h-10 bg-orange-500/10 rounded-lg flex items-center justify-center mb-4">
+            <svg class="w-5 h-5 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+          </div>
+          <h3 class="font-bold mb-2">Slow Onboarding</h3>
+          <p class="text-sm text-slate-400">props.conf + transforms.conf requires Splunk expertise</p>
+        </div>
+        <div class="bg-slate-800/50 rounded-xl p-6 border border-slate-700 hover:border-yellow-500/30 transition">
+          <div class="w-10 h-10 bg-yellow-500/10 rounded-lg flex items-center justify-center mb-4">
+            <svg class="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/>
+            </svg>
+          </div>
+          <h3 class="font-bold mb-2">Complex Routing</h3>
+          <p class="text-sm text-slate-400">outputs.conf configurations are error-prone</p>
+        </div>
+        <div class="bg-slate-800/50 rounded-xl p-6 border border-slate-700 hover:border-blue-500/30 transition">
+          <div class="w-10 h-10 bg-blue-500/10 rounded-lg flex items-center justify-center mb-4">
+            <svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/>
+            </svg>
+          </div>
+          <h3 class="font-bold mb-2">Bandwidth Waste</h3>
+          <p class="text-sm text-slate-400">Raw data shipped over expensive WAN links</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Interactive Demo Section -->
+  <section id="demo" class="py-20">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="text-center mb-12">
+        <h2 class="text-4xl font-black mb-4">Interactive Demo</h2>
+        <p class="text-xl text-slate-400 max-w-2xl mx-auto">Watch Expanso Edge in action. Click through scenarios to see different deployment patterns.</p>
+      </div>
+
+      <!-- Scenario Tabs -->
+      <div id="scenario-tabs" class="flex flex-wrap justify-center gap-2 mb-8">
+        <button onclick="window.demoApp.setScenario('hello')" data-scenario="hello" class="scenario-tab active px-4 py-2 rounded-lg text-sm font-medium transition">
+          A. Hello Edge
+        </button>
+        <button onclick="window.demoApp.setScenario('routing')" data-scenario="routing" class="scenario-tab bg-slate-800 px-4 py-2 rounded-lg text-sm font-medium transition">
+          B. Multi-Index
+        </button>
+        <button onclick="window.demoApp.setScenario('gdpr')" data-scenario="gdpr" class="scenario-tab bg-slate-800 px-4 py-2 rounded-lg text-sm font-medium transition">
+          C. GDPR Routing
+        </button>
+        <button onclick="window.demoApp.setScenario('aggregation')" data-scenario="aggregation" class="scenario-tab bg-slate-800 px-4 py-2 rounded-lg text-sm font-medium transition">
+          D. Aggregation
+        </button>
+        <button onclick="window.demoApp.setScenario('fleet')" data-scenario="fleet" class="scenario-tab bg-slate-800 px-4 py-2 rounded-lg text-sm font-medium transition">
+          E. Fleet Scale
+        </button>
+      </div>
+
+      <!-- Scenario Description -->
+      <div id="scenario-description" class="bg-slate-800/50 rounded-xl p-6 mb-8 border border-slate-700">
+        <div class="flex items-start gap-4">
+          <div class="w-12 h-12 bg-splunk-green/20 rounded-xl flex items-center justify-center flex-shrink-0">
+            <span id="scenario-letter" class="text-splunk-green font-bold text-xl">A</span>
+          </div>
+          <div>
+            <h3 id="scenario-title" class="text-xl font-bold mb-2">Hello Edge: Your First Pipeline</h3>
+            <p id="scenario-desc-text" class="text-slate-400">The simplest deployment: one edge node collecting Apache access logs and sending to a single Splunk index.</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main Demo Area -->
+      <div class="grid lg:grid-cols-3 gap-6">
+
+        <!-- Left Column: Architecture + Nodes -->
+        <div class="lg:col-span-2 space-y-6">
+
+          <!-- Architecture Visualization -->
+          <div class="bg-slate-900 rounded-2xl p-6 border border-slate-800">
+            <div class="flex items-center justify-between mb-4">
+              <h4 class="font-semibold text-slate-300">Architecture</h4>
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                <span class="text-xs text-slate-500">Live</span>
+              </div>
+            </div>
+
+            <div id="architecture-diagram" class="relative">
+              <svg viewBox="0 0 700 200" class="w-full" style="max-height: 200px;">
+                <defs>
+                  <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                    <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+                  </pattern>
+                </defs>
+                <rect width="700" height="200" fill="url(#grid)"/>
+                <g id="arch-nodes">
+                  <rect x="30" y="60" width="120" height="80" rx="8" fill="#1e293b" stroke="#65A637" stroke-width="2"/>
+                  <text x="90" y="90" fill="#65A637" font-size="11" text-anchor="middle" font-weight="600">edge-web-01</text>
+                  <text x="90" y="110" fill="#94a3b8" font-size="9" text-anchor="middle">Apache Logs</text>
+                  <circle cx="145" cy="100" r="6" fill="#22c55e" class="animate-pulse"/>
+                </g>
+                <g id="arch-pipeline">
+                  <rect x="220" y="50" width="180" height="100" rx="8" fill="#312e81" stroke="#6366f1" stroke-width="2"/>
+                  <text x="310" y="80" fill="#c7d2fe" font-size="11" text-anchor="middle" font-weight="600">Expanso Pipeline</text>
+                  <text x="310" y="100" fill="#818cf8" font-size="9" text-anchor="middle">Bloblang Transform</text>
+                  <text x="310" y="120" fill="#64748b" font-size="8" text-anchor="middle">sourcetype routing</text>
+                </g>
+                <g id="arch-flow-1">
+                  <line x1="150" y1="100" x2="220" y2="100" stroke="#4ade80" stroke-width="2" stroke-dasharray="4"/>
+                  <circle cx="175" cy="100" r="4" fill="#4ade80" class="data-packet"/>
+                </g>
+                <g id="arch-indexes">
+                  <rect x="480" y="30" width="100" height="50" rx="6" fill="#0f4c2a" stroke="#22c55e" stroke-width="2"/>
+                  <text x="530" y="55" fill="#4ade80" font-size="10" text-anchor="middle" font-weight="500">main_index</text>
+                  <text x="530" y="70" fill="#6b7280" font-size="8" text-anchor="middle">Splunk</text>
+                </g>
+                <g id="arch-flow-2">
+                  <line x1="400" y1="100" x2="480" y2="55" stroke="#22c55e" stroke-width="2" stroke-dasharray="4"/>
+                  <circle cx="440" cy="77" r="4" fill="#22c55e" class="data-packet" style="animation-delay: 0.5s"/>
+                </g>
+              </svg>
+            </div>
+          </div>
+
+          <!-- Edge Nodes Grid -->
+          <div id="nodes-grid" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <!-- Populated by JS -->
+          </div>
+
+        </div>
+
+        <!-- Right Column: Terminal + Metrics -->
+        <div class="space-y-6">
+
+          <!-- Metrics Dashboard -->
+          <div class="bg-slate-900 rounded-2xl p-6 border border-slate-800">
+            <h4 class="font-semibold text-slate-300 mb-4">Metrics</h4>
+            <div class="grid grid-cols-2 gap-4">
+              <div class="text-center">
+                <div class="text-2xl font-bold text-splunk-green" id="metric-events">0</div>
+                <div class="text-xs text-slate-500">Events</div>
+              </div>
+              <div class="text-center">
+                <div class="text-2xl font-bold text-expanso" id="metric-bytes">0</div>
+                <div class="text-xs text-slate-500">KB Processed</div>
+              </div>
+              <div class="text-center">
+                <div class="text-2xl font-bold text-green-500" id="metric-nodes">1</div>
+                <div class="text-xs text-slate-500">Active Nodes</div>
+              </div>
+              <div class="text-center">
+                <div class="text-2xl font-bold text-amber-500" id="metric-indexes">1</div>
+                <div class="text-xs text-slate-500">Indexes</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Mock Splunk Terminal -->
+          <div class="terminal rounded-xl overflow-hidden">
+            <div class="terminal-header px-4 py-3 flex items-center gap-3">
+              <div class="flex gap-2">
+                <span class="terminal-dot dot-red"></span>
+                <span class="terminal-dot dot-yellow"></span>
+                <span class="terminal-dot dot-green"></span>
+              </div>
+              <span class="text-xs text-slate-400 mono">main_index | tail -f</span>
+            </div>
+            <div id="terminal-output" class="p-4 h-64 overflow-y-auto custom-scrollbar text-xs mono leading-relaxed">
+              <div class="text-slate-500">Waiting for events...</div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Pipeline Code Viewer -->
+      <div id="pipeline-viewer" class="mt-8 bg-slate-900 rounded-2xl border border-slate-800 overflow-hidden">
+        <div class="bg-slate-800/50 px-6 py-4 flex items-center justify-between border-b border-slate-700">
+          <div class="flex items-center gap-3">
+            <svg class="w-5 h-5 text-expanso" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"/>
+            </svg>
+            <span class="font-semibold">Pipeline Configuration</span>
+          </div>
+          <span id="pipeline-filename" class="text-xs text-slate-500 mono">hello-edge.yaml</span>
+        </div>
+        <pre class="p-6 text-sm mono overflow-x-auto custom-scrollbar"><code id="pipeline-code" class="text-slate-300"></code></pre>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- Scenarios Detail Section -->
+  <section id="scenarios" class="py-20 bg-slate-900/50">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="text-center mb-16">
+        <h2 class="text-4xl font-black mb-4">Deployment Scenarios</h2>
+        <p class="text-xl text-slate-400 max-w-2xl mx-auto">From simple to sophisticated - Expanso grows with your needs</p>
+      </div>
+
+      <div class="space-y-8">
+        <!-- Scenario cards - static content, no dynamic HTML -->
+        <div class="bg-slate-800/30 rounded-2xl p-8 border border-slate-700/50">
+          <div class="flex items-center gap-3 mb-4">
+            <span class="w-10 h-10 bg-splunk-green/20 rounded-lg flex items-center justify-center text-splunk-green font-bold">A</span>
+            <h3 class="text-xl font-bold">Hello Edge</h3>
+          </div>
+          <p class="text-slate-400">Your first pipeline. One node, one index. Apache logs to Splunk in under 5 minutes.</p>
+        </div>
+
+        <div class="bg-slate-800/30 rounded-2xl p-8 border border-slate-700/50">
+          <div class="flex items-center gap-3 mb-4">
+            <span class="w-10 h-10 bg-expanso/20 rounded-lg flex items-center justify-center text-expanso font-bold">B</span>
+            <h3 class="text-xl font-bold">Multi-Index Routing</h3>
+          </div>
+          <p class="text-slate-400">Route by sourcetype. Access logs to web index, errors to security, syslog to os. Replaces outputs.conf.</p>
+        </div>
+
+        <div class="bg-slate-800/30 rounded-2xl p-8 border border-slate-700/50">
+          <div class="flex items-center gap-3 mb-4">
+            <span class="w-10 h-10 bg-blue-500/20 rounded-lg flex items-center justify-center text-blue-400 font-bold">C</span>
+            <h3 class="text-xl font-bold">GDPR Compliance</h3>
+          </div>
+          <p class="text-slate-400">Geographic routing enforced at the edge. EU data stays in EU storage. Compliance built in.</p>
+        </div>
+
+        <div class="bg-slate-800/30 rounded-2xl p-8 border border-slate-700/50">
+          <div class="flex items-center gap-3 mb-4">
+            <span class="w-10 h-10 bg-pink-500/20 rounded-lg flex items-center justify-center text-pink-400 font-bold">D</span>
+            <h3 class="text-xl font-bold">Edge Aggregation</h3>
+          </div>
+          <p class="text-slate-400">Pre-aggregate high-volume metrics at the edge. 1000 events/sec becomes 10 aggregated records. 99% bandwidth savings.</p>
+        </div>
+
+        <div class="bg-slate-800/30 rounded-2xl p-8 border border-slate-700/50">
+          <div class="flex items-center gap-3 mb-4">
+            <span class="w-10 h-10 bg-cyan-500/20 rounded-lg flex items-center justify-center text-cyan-400 font-bold">E</span>
+            <h3 class="text-xl font-bold">Fleet at Scale</h3>
+          </div>
+          <p class="text-slate-400">Central orchestration, distributed execution. 12+ nodes across 3 regions. One dashboard to rule them all.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Pipelines Section -->
+  <section id="pipelines" class="py-20">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="text-center mb-16">
+        <h2 class="text-4xl font-black mb-4">Real Pipelines</h2>
+        <p class="text-xl text-slate-400 max-w-2xl mx-auto">All demo pipelines are production-ready. Copy, customize, deploy.</p>
+      </div>
+
+      <div class="grid md:grid-cols-2 gap-8">
+        <div class="bg-slate-900 rounded-2xl p-8 border border-slate-800">
+          <h3 class="text-xl font-bold mb-6 flex items-center gap-2">
+            <span class="w-8 h-8 bg-splunk-green/20 rounded-lg flex items-center justify-center text-splunk-green text-sm font-bold">1</span>
+            Install Expanso Edge
+          </h3>
+          <div class="bg-slate-950 rounded-lg p-4 overflow-x-auto">
+            <pre class="text-sm mono"><code class="text-slate-300"># One-liner install
+curl -sL https://get.expanso.io/edge/install.sh | bash
+
+# Verify
+expanso-edge --version</code></pre>
+          </div>
+        </div>
+
+        <div class="bg-slate-900 rounded-2xl p-8 border border-slate-800">
+          <h3 class="text-xl font-bold mb-6 flex items-center gap-2">
+            <span class="w-8 h-8 bg-expanso/20 rounded-lg flex items-center justify-center text-expanso text-sm font-bold">2</span>
+            Run a Pipeline
+          </h3>
+          <div class="bg-slate-950 rounded-lg p-4 overflow-x-auto">
+            <pre class="text-sm mono"><code class="text-slate-300"># Set your Splunk HEC endpoint
+export SPLUNK_HEC_ENDPOINT=https://your-splunk:8088
+export SPLUNK_HEC_TOKEN=your-token
+
+# Run the pipeline
+expanso-edge run pipelines/hello-edge.yaml</code></pre>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="py-20 bg-slate-900/50">
+    <div class="max-w-4xl mx-auto px-6 text-center">
+      <h2 class="text-4xl font-black mb-6">Ready to Replace Fat Forwarders?</h2>
+      <p class="text-xl text-slate-400 mb-8">Start with one node today. Scale to thousands tomorrow.</p>
+      <div class="flex flex-wrap justify-center gap-4">
+        <a href="https://docs.expanso.io" class="bg-gradient-to-r from-splunk-green to-expanso hover:opacity-90 px-8 py-4 rounded-xl font-semibold text-lg transition">
+          Get Started
+        </a>
+        <a href="https://github.com/expanso-io/splunk-edge-demo" class="bg-slate-800 hover:bg-slate-700 border border-slate-700 px-8 py-4 rounded-xl font-semibold text-lg transition">
+          View on GitHub
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer class="py-12 border-t border-slate-800">
+    <div class="max-w-7xl mx-auto px-6">
+      <div class="flex flex-col md:flex-row justify-between items-center gap-6">
+        <div class="flex items-center gap-2">
+          <div class="w-8 h-8 bg-gradient-to-br from-expanso to-expanso-dark rounded-lg flex items-center justify-center font-bold text-sm">E</div>
+          <span class="font-semibold">Expanso</span>
+          <span class="text-slate-600 mx-2">|</span>
+          <span class="text-slate-500 text-sm">Edge Data Pipelines</span>
+        </div>
+        <div class="flex items-center gap-6 text-slate-500 text-sm">
+          <a href="https://expanso.io" class="hover:text-white transition">Website</a>
+          <a href="https://docs.expanso.io" class="hover:text-white transition">Docs</a>
+          <a href="https://github.com/expanso-io" class="hover:text-white transition">GitHub</a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- JavaScript - Using safe DOM manipulation -->
+  <script type="module">
+    // Import data generators
+    import { EdgeNode } from './js/data-generators.js';
+
+    // Scenario configurations with safe string content
+    const scenarios = {
+      hello: {
+        letter: 'A',
+        title: 'Hello Edge: Your First Pipeline',
+        description: 'The simplest deployment: one edge node collecting Apache access logs and sending to a single Splunk index.',
+        nodes: [{ id: 'edge-web-01', region: 'us', type: 'web' }],
+        indexes: ['main'],
+        filename: 'hello-edge.yaml',
+        pipeline: `# Scenario A: Hello Edge
+name: hello-edge-pipeline
+type: pipeline
+
+config:
+  input:
+    generate:
+      interval: 500ms
+      mapping: |
+        root = generate_apache_log()
+
+  output:
+    splunk_hec:
+      endpoint: \${SPLUNK_HEC_ENDPOINT}
+      index: main`
+      },
+      routing: {
+        letter: 'B',
+        title: 'Multi-Index Routing',
+        description: 'Route events by sourcetype to different indexes. Access logs to web, errors to security, syslog to os.',
+        nodes: [{ id: 'edge-mixed-01', region: 'us', type: 'mixed' }],
+        indexes: ['web', 'security', 'os'],
+        filename: 'multi-index.yaml',
+        pipeline: `# Scenario B: Multi-Index Routing
+name: multi-index-pipeline
+type: pipeline
+
+config:
+  pipeline:
+    processors:
+      - bloblang: |
+          meta "index" = if this.sourcetype == "access_combined" {
+            "web"
+          } else if this.sourcetype == "apache_error" {
+            "security"
+          } else {
+            "os"
+          }
+
+  output:
+    switch:
+      cases:
+        - check: meta("index") == "web"
+          output: { splunk_hec: { index: web } }
+        - check: meta("index") == "security"
+          output: { splunk_hec: { index: security } }
+        - check: true
+          output: { splunk_hec: { index: os } }`
+      },
+      gdpr: {
+        letter: 'C',
+        title: 'GDPR Compliance Routing',
+        description: 'Geographic routing at the edge. EU data with PII stays in EU storage. US and APAC routes to US.',
+        nodes: [
+          { id: 'edge-us-01', region: 'us', type: 'web' },
+          { id: 'edge-eu-01', region: 'eu', type: 'web' },
+          { id: 'edge-ap-01', region: 'apac', type: 'web' }
+        ],
+        indexes: ['us_main', 'eu_main'],
+        filename: 'gdpr-routing.yaml',
+        pipeline: `# Scenario C: GDPR Compliance
+name: gdpr-routing-pipeline
+type: pipeline
+
+config:
+  pipeline:
+    processors:
+      - bloblang: |
+          meta "destination" = if this.region == "eu" {
+            "eu-storage"
+          } else {
+            "us-storage"
+          }
+
+  output:
+    switch:
+      cases:
+        - check: meta("destination") == "eu-storage"
+          output:
+            splunk_hec:
+              endpoint: https://eu-hec.example.com
+              index: eu_main
+        - check: true
+          output:
+            splunk_hec:
+              endpoint: https://us-hec.example.com
+              index: us_main`
+      },
+      aggregation: {
+        letter: 'D',
+        title: 'Edge Aggregation',
+        description: 'Pre-aggregate metrics at the edge. 1000 events/sec input becomes 10 aggregated records. 99% bandwidth savings.',
+        nodes: [{ id: 'iot-gateway-01', region: 'us', type: 'iot' }],
+        indexes: ['metrics'],
+        filename: 'aggregation.yaml',
+        pipeline: `# Scenario D: Edge Aggregation
+name: aggregation-pipeline
+type: pipeline
+
+config:
+  input:
+    generate:
+      interval: 1ms  # High volume
+
+  pipeline:
+    processors:
+      - group_by:
+          window: 10s
+          fields: [sensor_id]
+      - bloblang: |
+          root.avg_temp = this.messages.map_each(
+            m -> m.temperature_c
+          ).sum() / this.messages.length()
+          root.event_count = this.messages.length()
+
+  output:
+    splunk_hec:
+      index: metrics`
+      },
+      fleet: {
+        letter: 'E',
+        title: 'Fleet at Scale',
+        description: 'Central orchestration, distributed execution. 12 nodes across 3 regions. One dashboard to manage them all.',
+        nodes: [
+          { id: 'edge-us-01', region: 'us', type: 'web' },
+          { id: 'edge-us-02', region: 'us', type: 'infra' },
+          { id: 'edge-us-03', region: 'us', type: 'web' },
+          { id: 'edge-us-04', region: 'us', type: 'iot' },
+          { id: 'edge-eu-01', region: 'eu', type: 'web' },
+          { id: 'edge-eu-02', region: 'eu', type: 'infra' },
+          { id: 'edge-eu-03', region: 'eu', type: 'web' },
+          { id: 'edge-eu-04', region: 'eu', type: 'iot' },
+          { id: 'edge-ap-01', region: 'apac', type: 'web' },
+          { id: 'edge-ap-02', region: 'apac', type: 'infra' },
+          { id: 'edge-ap-03', region: 'apac', type: 'web' },
+          { id: 'edge-ap-04', region: 'apac', type: 'iot' }
+        ],
+        indexes: ['web', 'security', 'os', 'metrics'],
+        filename: 'fleet-universal.yaml',
+        pipeline: `# Scenario E: Fleet at Scale
+name: fleet-universal-pipeline
+type: pipeline
+
+config:
+  pipeline:
+    processors:
+      - bloblang: |
+          meta "region" = if this.host.contains("us") { "us" }
+            else if this.host.contains("eu") { "eu" }
+            else { "apac" }
+
+          meta "index" = if this.sourcetype == "access_combined" {
+            "web"
+          } else if this.sourcetype.contains("error") {
+            "security"
+          } else {
+            "os"
+          }
+
+  output:
+    switch:
+      cases:
+        - check: meta("region") == "eu"
+          output: { splunk_hec: { endpoint: https://eu-hec.example.com } }
+        - check: true
+          output: { splunk_hec: { endpoint: https://us-hec.example.com } }`
+      }
+    };
+
+    // Demo Application using safe DOM methods
+    class DemoApp {
+      constructor() {
+        this.currentScenario = 'hello';
+        this.nodes = [];
+        this.eventLog = [];
+        this.totalEvents = 0;
+        this.totalBytes = 0;
+        this.isRunning = false;
+      }
+
+      init() {
+        this.setScenario('hello');
+        this.startSimulation();
+      }
+
+      setScenario(scenario) {
+        this.currentScenario = scenario;
+        const config = scenarios[scenario];
+
+        // Update tabs using classList (safe)
+        document.querySelectorAll('.scenario-tab').forEach(tab => {
+          tab.classList.remove('active');
+          tab.classList.add('bg-slate-800');
+          if (tab.dataset.scenario === scenario) {
+            tab.classList.add('active');
+            tab.classList.remove('bg-slate-800');
+          }
+        });
+
+        // Update description using textContent (safe)
+        document.getElementById('scenario-letter').textContent = config.letter;
+        document.getElementById('scenario-title').textContent = config.title;
+        document.getElementById('scenario-desc-text').textContent = config.description;
+
+        // Update pipeline using textContent (safe)
+        document.getElementById('pipeline-filename').textContent = config.filename;
+        document.getElementById('pipeline-code').textContent = config.pipeline;
+
+        // Update metrics using textContent (safe)
+        document.getElementById('metric-nodes').textContent = config.nodes.length;
+        document.getElementById('metric-indexes').textContent = config.indexes.length;
+
+        // Reset stats
+        this.nodes = config.nodes.map(n => new EdgeNode(n));
+        this.totalEvents = 0;
+        this.totalBytes = 0;
+        this.eventLog = [];
+
+        // Update nodes grid using safe DOM construction
+        this.updateNodesGrid(config);
+
+        // Clear terminal
+        this.clearTerminal();
+      }
+
+      updateNodesGrid(config) {
+        const grid = document.getElementById('nodes-grid');
+        // Clear existing content
+        while (grid.firstChild) {
+          grid.removeChild(grid.firstChild);
+        }
+
+        config.nodes.forEach(n => {
+          const card = document.createElement('div');
+          card.className = 'node-card bg-slate-800/50 rounded-xl p-4 border border-slate-700 hover:border-green-500/50 transition cursor-pointer';
+          card.dataset.node = n.id;
+
+          // Header
+          const header = document.createElement('div');
+          header.className = 'flex items-center gap-2 mb-3';
+
+          const statusDot = document.createElement('span');
+          statusDot.className = 'w-2 h-2 bg-green-500 rounded-full';
+          header.appendChild(statusDot);
+
+          const nodeName = document.createElement('span');
+          nodeName.className = 'font-medium text-sm';
+          nodeName.textContent = n.id;
+          header.appendChild(nodeName);
+
+          card.appendChild(header);
+
+          // Stats
+          const stats = document.createElement('div');
+          stats.className = 'space-y-1 text-xs text-slate-400';
+
+          const regionRow = this.createStatRow('Region:', n.region.toUpperCase());
+          const epsRow = this.createStatRow('Events/s:', '0', 'node-eps', n.id);
+          const typeRow = this.createStatRow('Type:', n.type);
+
+          stats.appendChild(regionRow);
+          stats.appendChild(epsRow);
+          stats.appendChild(typeRow);
+
+          card.appendChild(stats);
+          grid.appendChild(card);
+        });
+      }
+
+      createStatRow(label, value, className, dataId) {
+        const row = document.createElement('div');
+        row.className = 'flex justify-between';
+
+        const labelSpan = document.createElement('span');
+        labelSpan.textContent = label;
+        row.appendChild(labelSpan);
+
+        const valueSpan = document.createElement('span');
+        valueSpan.className = className ? `text-splunk-green ${className}` : 'text-slate-300';
+        valueSpan.textContent = value;
+        if (dataId) valueSpan.dataset.node = dataId;
+        row.appendChild(valueSpan);
+
+        return row;
+      }
+
+      clearTerminal() {
+        const terminal = document.getElementById('terminal-output');
+        while (terminal.firstChild) {
+          terminal.removeChild(terminal.firstChild);
+        }
+        const waiting = document.createElement('div');
+        waiting.className = 'text-slate-500';
+        waiting.textContent = 'Waiting for events...';
+        terminal.appendChild(waiting);
+      }
+
+      addEventToLog(event) {
+        this.totalEvents++;
+        this.totalBytes += event._raw.length;
+
+        this.eventLog.unshift(event);
+        if (this.eventLog.length > 50) this.eventLog.pop();
+
+        this.updateTerminal();
+      }
+
+      updateTerminal() {
+        const terminal = document.getElementById('terminal-output');
+        // Clear existing content
+        while (terminal.firstChild) {
+          terminal.removeChild(terminal.firstChild);
+        }
+
+        this.eventLog.slice(0, 15).forEach(event => {
+          const entry = document.createElement('div');
+          entry.className = 'mb-2 border-b border-slate-800/50 pb-2';
+
+          // Header line
+          const headerLine = document.createElement('div');
+          headerLine.className = 'flex items-center gap-2 text-slate-500 mb-1 flex-wrap';
+
+          const time = document.createElement('span');
+          time.textContent = new Date(event._time).toLocaleTimeString();
+          headerLine.appendChild(time);
+
+          const indexSpan = document.createElement('span');
+          indexSpan.className = 'text-green-400';
+          indexSpan.textContent = event.index;
+          headerLine.appendChild(indexSpan);
+
+          const sep = document.createElement('span');
+          sep.className = 'text-slate-600';
+          sep.textContent = '|';
+          headerLine.appendChild(sep);
+
+          const host = document.createElement('span');
+          host.textContent = `host=${event.host}`;
+          headerLine.appendChild(host);
+
+          entry.appendChild(headerLine);
+
+          // Raw content
+          const rawLine = document.createElement('div');
+          rawLine.className = 'text-slate-300 truncate';
+          rawLine.textContent = event._raw.substring(0, 100) + (event._raw.length > 100 ? '...' : '');
+          entry.appendChild(rawLine);
+
+          terminal.appendChild(entry);
+        });
+      }
+
+      updateMetrics() {
+        document.getElementById('metric-events').textContent = this.totalEvents.toLocaleString();
+        document.getElementById('metric-bytes').textContent = Math.round(this.totalBytes / 1024).toLocaleString();
+
+        // Update per-node EPS
+        document.querySelectorAll('.node-eps').forEach(el => {
+          el.textContent = Math.floor(Math.random() * 100 + 50);
+        });
+      }
+
+      startSimulation() {
+        this.isRunning = true;
+
+        const simulate = () => {
+          if (!this.isRunning) return;
+
+          // Generate events from each node
+          this.nodes.forEach(node => {
+            if (Math.random() > 0.3) {
+              const event = node.generate();
+              this.addEventToLog(event);
+            }
+          });
+
+          this.updateMetrics();
+
+          setTimeout(() => requestAnimationFrame(simulate), 500);
+        };
+
+        simulate();
+      }
+    }
+
+    // Initialize and expose to window for button handlers
+    const app = new DemoApp();
+    window.demoApp = app;
+    document.addEventListener('DOMContentLoaded', () => app.init());
+  </script>
+</body>
+</html>

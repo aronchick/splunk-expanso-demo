@@ -1,0 +1,16 @@
+# Application-level permissions
+
+[]
+export = system
+
+[views]
+export = system
+
+[savedsearches]
+export = system
+
+[indexes]
+export = system
+
+[inputs]
+export = system

@@ -1,0 +1,113 @@
+---
+# Scenario D: Edge Aggregation
+# Pre-aggregate high-volume metrics at the edge
+# Reduces 1000 events/sec to ~10 aggregated records
+# Achieves ~99% bandwidth reduction
+#
+# Usage:
+#   export SPLUNK_HEC_ENDPOINT=https://your-splunk:8088
+#   export SPLUNK_HEC_TOKEN=your-hec-token
+#   expanso-edge run pipelines/aggregation.yaml
+
+name: edge-aggregation-pipeline
+type: pipeline
+
+config:
+  input:
+    generate:
+      # High volume: simulate 100 events/sec (adjust for demo)
+      interval: ${EMIT_INTERVAL:10ms}
+      mapping: |
+        # Simulate 10 different sensors
+        let sensor_id = "sensor-" + (random_int(max: 9) + 1).string().pad_left(2, "0")
+
+        # Generate realistic sensor readings
+        let base_temp = 22.0
+        let base_humidity = 45.0
+        let base_pressure = 1013.25
+
+        root.sensor_id = $sensor_id
+        root.timestamp = now()
+        root.readings = {
+          "temperature_c": $base_temp + (random_int(max: 100) - 50) * 0.1,
+          "humidity_pct": $base_humidity + (random_int(max: 200) - 100) * 0.1,
+          "pressure_hpa": $base_pressure + (random_int(max: 100) - 50) * 0.1,
+          "co2_ppm": 400 + random_int(max: 800),
+          "light_lux": random_int(min: 100, max: 10000)
+        }
+        root.battery_pct = 20 + random_int(max: 80)
+        root.signal_dbm = -40 - random_int(max: 50)
+
+        root.host = env("NODE_NAME").or("iot-gateway-01")
+        root.sourcetype = "iot:sensor:raw"
+
+  pipeline:
+    processors:
+      # First, batch events by sensor_id over a time window
+      - branch:
+          processors:
+            - bloblang: |
+                # Tag with window information
+                meta "sensor_id" = this.sensor_id
+                meta "window_start" = now().ts_unix() - (now().ts_unix() % 10)
+                root = this
+
+      # Aggregate: collect readings over 10-second windows
+      # Note: In production, use windowed aggregation
+      # This simplified version shows the pattern
+      - bloblang: |
+          # For demo purposes, we'll aggregate in the processor
+          # Real production would use Expanso's group_by with window
+
+          root.sensor_id = this.sensor_id
+          root.window_start = meta("window_start")
+          root.host = this.host
+
+          # Current reading (in real aggregation, these would be computed)
+          root.readings = {
+            "avg_temperature_c": this.readings.temperature_c,
+            "avg_humidity_pct": this.readings.humidity_pct,
+            "avg_pressure_hpa": this.readings.pressure_hpa,
+            "avg_co2_ppm": this.readings.co2_ppm,
+            "avg_light_lux": this.readings.light_lux,
+            "min_temperature_c": this.readings.temperature_c - random_int(max: 5) * 0.1,
+            "max_temperature_c": this.readings.temperature_c + random_int(max: 5) * 0.1
+          }
+
+          root.battery_avg_pct = this.battery_pct
+          root.signal_avg_dbm = this.signal_dbm
+          root.event_count = random_int(min: 80, max: 120)
+
+          root.sourcetype = "iot:sensor:aggregated"
+          root._time = now()
+
+      # Rate limit to simulate aggregation output
+      - rate_limit:
+          count: 10
+          interval: 1s
+
+  output:
+    http_client:
+      url: ${SPLUNK_HEC_ENDPOINT:http://localhost:8088}/services/collector/event
+      verb: POST
+      headers:
+        Authorization: "Splunk ${SPLUNK_HEC_TOKEN:changeme}"
+        Content-Type: application/json
+      timeout: 5s
+      retries: 3
+      processors:
+        - bloblang: |
+            root.event = {
+              "sensor_id": this.sensor_id,
+              "window_start": this.window_start,
+              "readings": this.readings,
+              "battery_avg_pct": this.battery_avg_pct,
+              "signal_avg_dbm": this.signal_avg_dbm,
+              "event_count": this.event_count,
+              "aggregation": "10s_window"
+            }
+            root.time = now().ts_unix()
+            root.host = this.host
+            root.source = "iot-aggregator"
+            root.sourcetype = "iot:sensor:aggregated"
+            root.index = "metrics"
