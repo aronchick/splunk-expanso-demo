@@ -3,12 +3,9 @@
 # Geographic routing enforced at the edge
 # EU data with PII stays in EU storage
 #
-# Usage:
-#   export NODE_REGION=eu  # or 'us' or 'apac'
-#   export SPLUNK_HEC_US=https://us-splunk:8088
-#   export SPLUNK_HEC_EU=https://eu-splunk:8088
-#   export SPLUNK_HEC_TOKEN=your-hec-token
-#   expanso-edge run pipelines/gdpr-routing.yaml
+# Usage (local):
+#   docker compose up -d --scale edge=3
+#   tail -f logs/web.log  # watch region field
 
 name: gdpr-routing-pipeline
 type: pipeline

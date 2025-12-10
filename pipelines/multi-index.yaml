@@ -2,10 +2,9 @@
 # Scenario B: Multi-Index Routing
 # Route events by sourcetype to different Splunk indexes
 #
-# Usage:
-#   export SPLUNK_HEC_ENDPOINT=https://your-splunk:8088
-#   export SPLUNK_HEC_TOKEN=your-hec-token
-#   expanso-edge run pipelines/multi-index.yaml
+# Usage (local):
+#   docker compose up -d --scale edge=1
+#   tail -f logs/web.log logs/security.log logs/os.log
 
 name: multi-index-pipeline
 type: pipeline

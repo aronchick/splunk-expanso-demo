@@ -1,266 +1,33 @@
 ---
-# Expanso + Splunk Edge Pipeline Demo
-# Docker Compose for local development and demonstration
-#
-# This spins up:
-# - 6 Expanso Edge nodes (2 per region: US, EU, APAC)
-# - Mock Splunk HEC receivers (US and EU)
-# - Prometheus for metrics collection
-# - Grafana for visualization
+# Expanso Edge Demo - Simple local setup
 #
 # Usage:
-#   docker compose up -d
-#   open http://localhost:3000  (Grafana - admin/admin)
-#   open http://localhost:8080  (US HEC logs)
-#   open http://localhost:8081  (EU HEC logs)
+#   docker compose up -d --scale edge=6
+#   tail -f logs/web.log
+#   docker compose down
 
 services:
-  # ============================================================
-  # MOCK SPLUNK HEC RECEIVERS
-  # Simple HTTP servers that accept HEC format and log events
-  # ============================================================
-
-  splunk-hec-us:
+  hec:
     image: python:3.11-slim
-    container_name: splunk-hec-us
     ports:
-      - "8080:8088"
+      - "127.0.0.1:8088:8088"
     volumes:
       - ./docker/hec-receiver.py:/app/hec-receiver.py:ro
-      - hec-logs-us:/var/log/splunk
+      - ./logs:/app/logs
     environment:
-      - REGION=US
-      - LOG_DIR=/var/log/splunk
+      - LOG_DIR=/app/logs
+    working_dir: /app
     command: python /app/hec-receiver.py
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8088/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    networks:
-      - expanso-demo
 
-  splunk-hec-eu:
-    image: python:3.11-slim
-    container_name: splunk-hec-eu
-    ports:
-      - "8081:8088"
-    volumes:
-      - ./docker/hec-receiver.py:/app/hec-receiver.py:ro
-      - hec-logs-eu:/var/log/splunk
-    environment:
-      - REGION=EU
-      - LOG_DIR=/var/log/splunk
-    command: python /app/hec-receiver.py
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8088/health"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-    networks:
-      - expanso-demo
-
-  # ============================================================
-  # EXPANSO EDGE NODES - US REGION
-  # ============================================================
-
-  edge-us-01:
+  edge:
     image: ghcr.io/expanso-io/expanso-edge:latest
-    container_name: edge-us-01
     volumes:
       - ./pipelines/fleet-universal.yaml:/etc/expanso/pipeline.yaml:ro
     environment:
-      - NODE_NAME=edge-us-01
-      - NODE_REGION=us
-      - SPLUNK_HEC_US=http://splunk-hec-us:8088
-      - SPLUNK_HEC_EU=http://splunk-hec-eu:8088
-      - SPLUNK_HEC_TOKEN=demo-token
-      - EMIT_INTERVAL=1s
+      - SPLUNK_HEC_US=http://hec:8088
+      - SPLUNK_HEC_EU=http://hec:8088
+      - SPLUNK_HEC_TOKEN=${SPLUNK_HEC_TOKEN:-demo}
+      - EMIT_INTERVAL=${EMIT_INTERVAL:-1s}
     command: ["run", "/etc/expanso/pipeline.yaml"]
     depends_on:
-      splunk-hec-us:
-        condition: service_healthy
-    networks:
-      - expanso-demo
-    labels:
-      - "expanso.region=us"
-      - "expanso.type=web"
-
-  edge-us-02:
-    image: ghcr.io/expanso-io/expanso-edge:latest
-    container_name: edge-us-02
-    volumes:
-      - ./pipelines/fleet-universal.yaml:/etc/expanso/pipeline.yaml:ro
-    environment:
-      - NODE_NAME=edge-us-02
-      - NODE_REGION=us
-      - SPLUNK_HEC_US=http://splunk-hec-us:8088
-      - SPLUNK_HEC_EU=http://splunk-hec-eu:8088
-      - SPLUNK_HEC_TOKEN=demo-token
-      - EMIT_INTERVAL=1s
-    command: ["run", "/etc/expanso/pipeline.yaml"]
-    depends_on:
-      splunk-hec-us:
-        condition: service_healthy
-    networks:
-      - expanso-demo
-    labels:
-      - "expanso.region=us"
-      - "expanso.type=infra"
-
-  # ============================================================
-  # EXPANSO EDGE NODES - EU REGION
-  # ============================================================
-
-  edge-eu-01:
-    image: ghcr.io/expanso-io/expanso-edge:latest
-    container_name: edge-eu-01
-    volumes:
-      - ./pipelines/fleet-universal.yaml:/etc/expanso/pipeline.yaml:ro
-    environment:
-      - NODE_NAME=edge-eu-01
-      - NODE_REGION=eu
-      - SPLUNK_HEC_US=http://splunk-hec-us:8088
-      - SPLUNK_HEC_EU=http://splunk-hec-eu:8088
-      - SPLUNK_HEC_TOKEN=demo-token
-      - EMIT_INTERVAL=1s
-    command: ["run", "/etc/expanso/pipeline.yaml"]
-    depends_on:
-      splunk-hec-eu:
-        condition: service_healthy
-    networks:
-      - expanso-demo
-    labels:
-      - "expanso.region=eu"
-      - "expanso.type=web"
-
-  edge-eu-02:
-    image: ghcr.io/expanso-io/expanso-edge:latest
-    container_name: edge-eu-02
-    volumes:
-      - ./pipelines/fleet-universal.yaml:/etc/expanso/pipeline.yaml:ro
-    environment:
-      - NODE_NAME=edge-eu-02
-      - NODE_REGION=eu
-      - SPLUNK_HEC_US=http://splunk-hec-us:8088
-      - SPLUNK_HEC_EU=http://splunk-hec-eu:8088
-      - SPLUNK_HEC_TOKEN=demo-token
-      - EMIT_INTERVAL=1s
-    command: ["run", "/etc/expanso/pipeline.yaml"]
-    depends_on:
-      splunk-hec-eu:
-        condition: service_healthy
-    networks:
-      - expanso-demo
-    labels:
-      - "expanso.region=eu"
-      - "expanso.type=iot"
-
-  # ============================================================
-  # EXPANSO EDGE NODES - APAC REGION
-  # ============================================================
-
-  edge-ap-01:
-    image: ghcr.io/expanso-io/expanso-edge:latest
-    container_name: edge-ap-01
-    volumes:
-      - ./pipelines/fleet-universal.yaml:/etc/expanso/pipeline.yaml:ro
-    environment:
-      - NODE_NAME=edge-ap-01
-      - NODE_REGION=apac
-      - SPLUNK_HEC_US=http://splunk-hec-us:8088
-      - SPLUNK_HEC_EU=http://splunk-hec-eu:8088
-      - SPLUNK_HEC_TOKEN=demo-token
-      - EMIT_INTERVAL=1s
-    command: ["run", "/etc/expanso/pipeline.yaml"]
-    depends_on:
-      splunk-hec-us:
-        condition: service_healthy
-    networks:
-      - expanso-demo
-    labels:
-      - "expanso.region=apac"
-      - "expanso.type=web"
-
-  edge-ap-02:
-    image: ghcr.io/expanso-io/expanso-edge:latest
-    container_name: edge-ap-02
-    volumes:
-      - ./pipelines/fleet-universal.yaml:/etc/expanso/pipeline.yaml:ro
-    environment:
-      - NODE_NAME=edge-ap-02
-      - NODE_REGION=apac
-      - SPLUNK_HEC_US=http://splunk-hec-us:8088
-      - SPLUNK_HEC_EU=http://splunk-hec-eu:8088
-      - SPLUNK_HEC_TOKEN=demo-token
-      - EMIT_INTERVAL=1s
-    command: ["run", "/etc/expanso/pipeline.yaml"]
-    depends_on:
-      splunk-hec-us:
-        condition: service_healthy
-    networks:
-      - expanso-demo
-    labels:
-      - "expanso.region=apac"
-      - "expanso.type=infra"
-
-  # ============================================================
-  # OBSERVABILITY STACK
-  # ============================================================
-
-  prometheus:
-    image: prom/prometheus:latest
-    container_name: prometheus
-    ports:
-      - "9090:9090"
-    volumes:
-      - ./docker/prometheus.yaml:/etc/prometheus/prometheus.yml:ro
-      - prometheus-data:/prometheus
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.enable-lifecycle'
-    networks:
-      - expanso-demo
-
-  grafana:
-    image: grafana/grafana:latest
-    container_name: grafana
-    ports:
-      - "3000:3000"
-    environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
-      - GF_AUTH_ANONYMOUS_ENABLED=true
-      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
-    volumes:
-      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./docker/grafana/dashboards:/var/lib/grafana/dashboards:ro
-      - grafana-data:/var/lib/grafana
-    depends_on:
-      - prometheus
-    networks:
-      - expanso-demo
-
-  # ============================================================
-  # LOG VIEWER - Simple web UI to tail HEC logs
-  # ============================================================
-
-  log-viewer:
-    image: amir20/dozzle:latest
-    container_name: log-viewer
-    ports:
-      - "9999:8080"
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    networks:
-      - expanso-demo
-
-networks:
-  expanso-demo:
-    driver: bridge
-
-volumes:
-  hec-logs-us:
-  hec-logs-eu:
-  prometheus-data:
-  grafana-data:
+      - hec

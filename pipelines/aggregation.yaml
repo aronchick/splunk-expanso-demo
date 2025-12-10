@@ -4,10 +4,9 @@
 # Reduces 1000 events/sec to ~10 aggregated records
 # Achieves ~99% bandwidth reduction
 #
-# Usage:
-#   export SPLUNK_HEC_ENDPOINT=https://your-splunk:8088
-#   export SPLUNK_HEC_TOKEN=your-hec-token
-#   expanso-edge run pipelines/aggregation.yaml
+# Usage (local):
+#   docker compose up -d --scale edge=1
+#   tail -f logs/metrics.log
 
 name: edge-aggregation-pipeline
 type: pipeline

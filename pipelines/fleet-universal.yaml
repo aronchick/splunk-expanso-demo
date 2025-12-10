@@ -1,14 +1,12 @@
 ---
-# Scenario E: Fleet at Scale - Universal Pipeline
-# Deploy the same pipeline to all edge nodes
-# Auto-detects region from node name and routes accordingly
+# Fleet Universal Pipeline
+# Randomly assigns region and generates mixed data types
 #
 # Usage:
-#   export NODE_NAME=edge-us-01  # or edge-eu-01, edge-ap-01, etc.
-#   export SPLUNK_HEC_US=https://us-splunk:8088
-#   export SPLUNK_HEC_EU=https://eu-splunk:8088
-#   export SPLUNK_HEC_TOKEN=your-hec-token
 #   expanso-edge run pipelines/fleet-universal.yaml
+#
+# Or with docker compose:
+#   docker compose up -d --scale edge=6
 
 name: fleet-universal-pipeline
 type: pipeline
@@ -18,30 +16,31 @@ config:
     generate:
       interval: ${EMIT_INTERVAL:500ms}
       mapping: |
-        let node_name = env("NODE_NAME").or("edge-us-01")
+        # Random region assignment (roughly equal distribution)
+        let regions = ["us", "eu", "apac"]
+        let region = $regions.index(random_int(max: 3))
 
-        # Auto-detect region from node name
-        let region = if $node_name.contains("-eu-") { "eu" }
-          else if $node_name.contains("-ap-") { "apac" }
-          else { "us" }
+        # Generate hostname based on region
+        let node_id = random_int(min: 1, max: 99)
+        let node_name = "edge-%s-%02d".format($region, $node_id)
 
-        # Auto-detect node type from name (or randomly assign)
+        # Random data type distribution
         let type_roll = random_int(max: 100)
 
         root = if $type_roll < 60 {
           # 60% web traffic
           let methods = ["GET", "GET", "GET", "POST", "PUT"]
-          let paths = ["/api/users", "/api/orders", "/login", "/health"]
-          let statuses = [200, 200, 200, 201, 400, 404]
-          let ips = ["192.168.1.100", "10.0.0.50", "172.16.0.1"]
+          let paths = ["/api/users", "/api/orders", "/login", "/health", "/search"]
+          let statuses = [200, 200, 200, 201, 400, 404, 500]
+          let ips = ["192.168.1.100", "10.0.0.50", "172.16.0.1", "8.8.8.8"]
 
           {
             "_raw": "%s - - [%s] \"%s %s HTTP/1.1\" %s %s".format(
-              $ips.index(random_int(max: 2)),
+              $ips.index(random_int(max: 4)),
               now().ts_strftime("%d/%b/%Y:%H:%M:%S -0800"),
-              $methods.index(random_int(max: 4)),
-              $paths.index(random_int(max: 3)),
-              $statuses.index(random_int(max: 5)).string(),
+              $methods.index(random_int(max: 5)),
+              $paths.index(random_int(max: 5)),
+              $statuses.index(random_int(max: 7)).string(),
               random_int(min: 100, max: 50000).string()
             ),
             "sourcetype": "access_combined",
@@ -53,14 +52,15 @@ config:
           let messages = [
             "Failed login attempt from suspicious IP",
             "SSL certificate expiring soon",
-            "Rate limit exceeded for client"
+            "Rate limit exceeded for client",
+            "Connection timeout to backend"
           ]
 
           {
             "_raw": "[%s] [%s] %s".format(
               now().ts_strftime("%d/%b/%Y:%H:%M:%S -0800"),
-              $levels.index(random_int(max: 2)),
-              $messages.index(random_int(max: 2))
+              $levels.index(random_int(max: 3)),
+              $messages.index(random_int(max: 4))
             ),
             "sourcetype": "apache_error",
             "source": "/var/log/httpd/error_log"
@@ -80,7 +80,7 @@ config:
               now().ts_strftime("%b %d %H:%M:%S"),
               $node_name,
               random_int(min: 1000, max: 9999).string(),
-              $messages.index(random_int(max: 3))
+              $messages.index(random_int(max: 4))
             ),
             "sourcetype": "syslog",
             "source": "/var/log/messages"
@@ -105,82 +105,35 @@ config:
   pipeline:
     processors:
       - bloblang: |
-          # Auto-detect region from host name
-          meta "region" = if this.host.contains("-eu-") { "eu" }
-            else if this.host.contains("-ap-") { "apac" }
-            else { "us" }
-
           # Route by sourcetype to appropriate index
-          meta "index" = if this.sourcetype == "access_combined" {
-            "web"
-          } else if this.sourcetype == "apache_error" {
-            "security"
-          } else if this.sourcetype == "metrics:host" {
-            "metrics"
-          } else {
-            "os"
+          meta "index" = match this.sourcetype {
+            "access_combined" => "web",
+            "apache_error" => "security",
+            "metrics:host" => "metrics",
+            _ => "os"
           }
 
-          # Determine destination based on region (GDPR)
-          meta "destination" = if meta("region") == "eu" {
-            "eu-storage"
-          } else {
-            "us-storage"
-          }
-
+          meta "region" = this.region
           meta "sourcetype" = this.sourcetype
           meta "host" = this.host
           meta "source" = this.source
-
           root = this
 
   output:
-    switch:
-      cases:
-        # EU Storage
-        - check: meta("destination") == "eu-storage"
-          output:
-            http_client:
-              url: ${SPLUNK_HEC_EU:http://localhost:8088}/services/collector/event
-              verb: POST
-              headers:
-                Authorization: "Splunk ${SPLUNK_HEC_TOKEN:changeme}"
-                Content-Type: application/json
-              timeout: 5s
-              retries: 3
-              processors:
-                - bloblang: |
-                    root.event = this._raw
-                    root.time = now().ts_unix()
-                    root.host = meta("host")
-                    root.source = meta("source")
-                    root.sourcetype = meta("sourcetype")
-                    root.index = meta("index")
-                    root.fields = {
-                      "region": meta("region"),
-                      "node_type": "edge"
-                    }
-
-        # US Storage (default)
-        - check: true
-          output:
-            http_client:
-              url: ${SPLUNK_HEC_US:http://localhost:8088}/services/collector/event
-              verb: POST
-              headers:
-                Authorization: "Splunk ${SPLUNK_HEC_TOKEN:changeme}"
-                Content-Type: application/json
-              timeout: 5s
-              retries: 3
-              processors:
-                - bloblang: |
-                    root.event = this._raw
-                    root.time = now().ts_unix()
-                    root.host = meta("host")
-                    root.source = meta("source")
-                    root.sourcetype = meta("sourcetype")
-                    root.index = meta("index")
-                    root.fields = {
-                      "region": meta("region"),
-                      "node_type": "edge"
-                    }
+    http_client:
+      url: ${SPLUNK_HEC_US:http://localhost:8088}/services/collector/event
+      verb: POST
+      headers:
+        Authorization: "Splunk ${SPLUNK_HEC_TOKEN:changeme}"
+        Content-Type: application/json
+      timeout: 5s
+      retries: 3
+      processors:
+        - bloblang: |
+            root.event = this._raw
+            root.time = now().ts_unix()
+            root.host = meta("host")
+            root.source = meta("source")
+            root.sourcetype = meta("sourcetype")
+            root.index = meta("index")
+            root.fields.region = meta("region")

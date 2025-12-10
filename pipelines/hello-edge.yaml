@@ -2,10 +2,9 @@
 # Scenario A: Hello Edge
 # The simplest pipeline: one edge node, one index
 #
-# Usage:
-#   export SPLUNK_HEC_ENDPOINT=https://your-splunk:8088
-#   export SPLUNK_HEC_TOKEN=your-hec-token
-#   expanso-edge run pipelines/hello-edge.yaml
+# Usage (local):
+#   docker compose up -d --scale edge=1
+#   tail -f logs/main.log
 
 name: hello-edge-pipeline
 type: pipeline
