@@ -20,14 +20,10 @@ services:
     command: python /app/hec-receiver.py
 
   edge:
-    image: ghcr.io/expanso-io/expanso-edge:latest
-    volumes:
-      - ./pipelines/fleet-universal.yaml:/etc/expanso/pipeline.yaml:ro
+    image: ghcr.io/expanso-io/expanso-edge:nightly
     environment:
-      - SPLUNK_HEC_US=http://hec:8088
-      - SPLUNK_HEC_EU=http://hec:8088
-      - SPLUNK_HEC_TOKEN=${SPLUNK_HEC_TOKEN:-demo}
-      - EMIT_INTERVAL=${EMIT_INTERVAL:-1s}
-    command: ["run", "/etc/expanso/pipeline.yaml"]
+      - EXPANSO_EDGE_BOOTSTRAP_URL=${EXPANSO_EDGE_BOOTSTRAP_URL}
+      - EXPANSO_EDGE_BOOTSTRAP_TOKEN=${EXPANSO_EDGE_BOOTSTRAP_TOKEN}
+    command: ["run", "--verbose"]
     depends_on:
       - hec

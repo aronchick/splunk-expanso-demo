@@ -12,17 +12,18 @@ type: pipeline
 config:
   input:
     generate:
-      interval: ${EMIT_INTERVAL:500ms}
+      interval: 500ms
+      count: 0
       mapping: |
         let methods = ["GET", "GET", "GET", "POST", "PUT", "DELETE"]
         let paths = ["/api/users", "/api/orders", "/api/products", "/login", "/health"]
         let statuses = [200, 200, 200, 201, 301, 400, 404, 500]
         let ips = ["192.168.1.100", "10.0.0.50", "172.16.0.1", "203.0.113.42"]
 
-        let ip = $ips.index(random_int(max: $ips.length() - 1))
-        let method = $methods.index(random_int(max: $methods.length() - 1))
-        let path = $paths.index(random_int(max: $paths.length() - 1))
-        let status = $statuses.index(random_int(max: $statuses.length() - 1))
+        let ip = $ips.index(random_int(max: 3))
+        let method = $methods.index(random_int(max: 5))
+        let path = $paths.index(random_int(max: 4))
+        let status = $statuses.index(random_int(max: 7))
         let bytes = random_int(min: 100, max: 50000)
         let user = if random_int(max: 100) > 85 { "admin" } else { "-" }
 
@@ -30,7 +31,7 @@ config:
           $ip, $user, now().ts_strftime("%d/%b/%Y:%H:%M:%S -0800"),
           $method, $path, $status.string(), $bytes.string()
         )
-        root.host = env("NODE_NAME").or("edge-web-01")
+        root.host = hostname()
         root.source = "/var/log/httpd/access_log"
         root.sourcetype = "access_combined"
         root.clientip = $ip
@@ -51,20 +52,21 @@ config:
           # Pass through the raw event
           root = this
 
+      # Format for Splunk HEC
+      - bloblang: |
+          root.event = this._raw
+          root.time = now().ts_unix()
+          root.host = meta("host")
+          root.source = meta("source")
+          root.sourcetype = meta("sourcetype")
+          root.index = meta("index")
+
   output:
     http_client:
-      url: ${SPLUNK_HEC_ENDPOINT:http://localhost:8088}/services/collector/event
+      url: http://hec:8088/services/collector/event
       verb: POST
       headers:
-        Authorization: "Splunk ${SPLUNK_HEC_TOKEN:changeme}"
+        Authorization: "Splunk demo"
         Content-Type: application/json
       timeout: 5s
       retries: 3
-      processors:
-        - bloblang: |
-            root.event = this._raw
-            root.time = now().ts_unix()
-            root.host = meta("host")
-            root.source = meta("source")
-            root.sourcetype = meta("sourcetype")
-            root.index = meta("index")

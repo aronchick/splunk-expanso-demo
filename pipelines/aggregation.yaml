@@ -15,7 +15,7 @@ config:
   input:
     generate:
       # High volume: simulate 100 events/sec (adjust for demo)
-      interval: ${EMIT_INTERVAL:10ms}
+      interval: 10ms
       mapping: |
         # Simulate 10 different sensors
         let sensor_id = "sensor-" + (random_int(max: 9) + 1).string().pad_left(2, "0")
@@ -37,7 +37,7 @@ config:
         root.battery_pct = 20 + random_int(max: 80)
         root.signal_dbm = -40 - random_int(max: 50)
 
-        root.host = env("NODE_NAME").or("iot-gateway-01")
+        root.host = hostname()
         root.sourcetype = "iot:sensor:raw"
 
   pipeline:
@@ -87,10 +87,10 @@ config:
 
   output:
     http_client:
-      url: ${SPLUNK_HEC_ENDPOINT:http://localhost:8088}/services/collector/event
+      url: http://hec:8088/services/collector/event
       verb: POST
       headers:
-        Authorization: "Splunk ${SPLUNK_HEC_TOKEN:changeme}"
+        Authorization: "Splunk demo"
         Content-Type: application/json
       timeout: 5s
       retries: 3

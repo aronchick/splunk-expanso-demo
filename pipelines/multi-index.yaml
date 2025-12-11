@@ -12,7 +12,7 @@ type: pipeline
 config:
   input:
     generate:
-      interval: ${EMIT_INTERVAL:500ms}
+      interval: 500ms
       mapping: |
         # Generate mixed log types with weighted distribution
         let type_roll = random_int(max: 100)
@@ -76,7 +76,7 @@ config:
             "_raw": "<%s>%s %s %s[%s]: %s".format(
               random_int(max: 191).string(),
               now().ts_strftime("%b %d %H:%M:%S"),
-              env("NODE_NAME").or("server-01"),
+              hostname(),
               $facility, random_int(min: 1000, max: 9999).string(), $msg
             ),
             "sourcetype": "syslog",
@@ -86,7 +86,7 @@ config:
           }
         }
 
-        root.host = env("NODE_NAME").or("edge-mixed-01")
+        root.host = hostname()
 
   pipeline:
     processors:
@@ -112,10 +112,10 @@ config:
         - check: meta("index") == "web"
           output:
             http_client:
-              url: ${SPLUNK_HEC_ENDPOINT:http://localhost:8088}/services/collector/event
+              url: http://hec:8088/services/collector/event
               verb: POST
               headers:
-                Authorization: "Splunk ${SPLUNK_HEC_TOKEN:changeme}"
+                Authorization: "Splunk demo"
                 Content-Type: application/json
               processors:
                 - bloblang: |
@@ -129,10 +129,10 @@ config:
         - check: meta("index") == "security"
           output:
             http_client:
-              url: ${SPLUNK_HEC_ENDPOINT:http://localhost:8088}/services/collector/event
+              url: http://hec:8088/services/collector/event
               verb: POST
               headers:
-                Authorization: "Splunk ${SPLUNK_HEC_TOKEN:changeme}"
+                Authorization: "Splunk demo"
                 Content-Type: application/json
               processors:
                 - bloblang: |
@@ -146,10 +146,10 @@ config:
         - check: true
           output:
             http_client:
-              url: ${SPLUNK_HEC_ENDPOINT:http://localhost:8088}/services/collector/event
+              url: http://hec:8088/services/collector/event
               verb: POST
               headers:
-                Authorization: "Splunk ${SPLUNK_HEC_TOKEN:changeme}"
+                Authorization: "Splunk demo"
                 Content-Type: application/json
               processors:
                 - bloblang: |
