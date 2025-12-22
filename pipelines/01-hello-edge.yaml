@@ -1,0 +1,93 @@
+---
+# Scenario A: Hello Edge
+# The simplest pipeline: one edge node, one index
+# Shows ALL regions (US, EU, APAC) - no filtering
+#
+# Usage (local):
+#   docker compose up -d --scale edge=1
+#   tail -f logs/main.log
+
+name: hello-edge-pipeline
+type: pipeline
+
+config:
+  input:
+    generate:
+      interval: 500ms
+      count: 0
+      mapping: |
+        # Seed with nanosecond timestamp for unique randoms per message
+        let seed = now().ts_unix_nano()
+
+        # Randomly assign region: 40% US, 40% EU, 20% APAC
+        let region_roll = random_int(seed: $seed, max: 100)
+        let region = if $region_roll < 40 { "us" } else if $region_roll < 80 { "eu" } else { "apac" }
+
+        # Regional IP pools
+        let us_ips = ["192.168.1.100", "10.0.0.50", "172.16.0.1"]
+        let eu_ips = ["10.20.30.40", "172.20.0.100", "192.168.50.25"]
+        let apac_ips = ["10.50.0.100", "172.50.0.50", "192.168.100.1"]
+
+        let ips = if $region == "eu" { $eu_ips }
+          else if $region == "apac" { $apac_ips }
+          else { $us_ips }
+
+        let ip = $ips.index(random_int(seed: $seed, max: 2))
+
+        let methods = ["GET", "GET", "GET", "POST", "PUT", "DELETE"]
+        let paths = ["/api/users", "/api/orders", "/api/products", "/login", "/health"]
+        let statuses = [200, 200, 200, 201, 301, 400, 404, 500]
+
+        let method = $methods.index(random_int(seed: $seed, max: 5))
+        let path = $paths.index(random_int(seed: $seed, max: 4))
+        let status = $statuses.index(random_int(seed: $seed, max: 7))
+        let bytes = random_int(seed: $seed, min: 100, max: 50000)
+        let user = if random_int(seed: $seed, max: 100) > 85 { "admin" } else { "-" }
+
+        root._raw = "%s - %s [%s] \"%s %s HTTP/1.1\" %s %s".format(
+          $ip, $user, now().ts_strftime("%d/%b/%Y:%H:%M:%S -0800"),
+          $method, $path, $status.string(), $bytes.string()
+        )
+        root.host = hostname()
+        root.source = "/var/log/httpd/access_log"
+        root.sourcetype = "access_combined"
+        root.region = $region
+        root.clientip = $ip
+        root.method = $method
+        root.uri_path = $path
+        root.status = $status
+        root.bytes = $bytes
+
+  pipeline:
+    processors:
+      - bloblang: |
+          # Add metadata for Splunk - ALL regions sent (no filtering)
+          meta "index" = "main"
+          meta "sourcetype" = this.sourcetype
+          meta "host" = this.host
+          meta "source" = this.source
+          meta "region" = this.region
+
+          root = this
+
+      # Format for Splunk HEC
+      - bloblang: |
+          root.event = this._raw
+          root.time = now().ts_unix()
+          root.host = meta("host")
+          root.source = meta("source")
+          root.sourcetype = meta("sourcetype")
+          root.index = meta("index")
+          root.fields = {
+            "region": meta("region")
+          }
+
+  output:
+    http_client:
+      url: http://hec:8088/services/collector/event
+      verb: POST
+      headers:
+        Authorization: "Splunk demo"
+        Content-Type: application/json
+      timeout: 5s
+      retries: 3

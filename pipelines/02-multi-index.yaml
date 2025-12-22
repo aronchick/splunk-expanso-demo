@@ -1,0 +1,162 @@
+---
+# Scenario B: Multi-Index Routing
+# Route events by sourcetype to different Splunk indexes
+# Shows ALL regions (US, EU, APAC) - no filtering
+#
+# Usage (local):
+#   docker compose up -d --scale edge=1
+#   tail -f logs/web.log logs/security.log logs/os.log
+
+name: multi-index-pipeline
+type: pipeline
+
+config:
+  input:
+    generate:
+      interval: 500ms
+      count: 0
+      mapping: |
+        # Seed with nanosecond timestamp for unique randoms per message
+        let seed = now().ts_unix_nano()
+
+        # Randomly assign region: 40% US, 40% EU, 20% APAC
+        let region_roll = random_int(seed: $seed, max: 100)
+        let region = if $region_roll < 40 { "us" } else if $region_roll < 80 { "eu" } else { "apac" }
+
+        # Regional IP pools
+        let us_ips = ["192.168.1.100", "10.0.0.50", "172.16.0.1"]
+        let eu_ips = ["10.20.30.40", "172.20.0.100", "192.168.50.25"]
+        let apac_ips = ["10.50.0.100", "172.50.0.50", "192.168.100.1"]
+
+        let ips = if $region == "eu" { $eu_ips }
+          else if $region == "apac" { $apac_ips }
+          else { $us_ips }
+
+        let ip = $ips.index(random_int(seed: $seed, max: 2))
+
+        # Generate mixed log types with weighted distribution
+        let type_roll = random_int(seed: $seed, max: 100)
+
+        # 70% Apache access logs
+        let methods = ["GET", "GET", "GET", "POST", "PUT", "DELETE"]
+        let paths = ["/api/users", "/api/orders", "/api/products", "/login", "/health"]
+        let statuses = [200, 200, 200, 201, 301, 400, 404, 500]
+        let method = $methods.index(random_int(seed: $seed, max: 5))
+        let path = $paths.index(random_int(seed: $seed, max: 4))
+        let status = $statuses.index(random_int(seed: $seed, max: 7))
+
+        # 15% Apache error logs
+        let levels = ["notice", "warn", "error", "crit"]
+        let error_messages = ["ModSecurity Warning - Pattern match detected", "File does not exist /var/www/html/admin", "SSL handshake failed - SSL alert number 40", "client denied by server configuration"]
+        let level = $levels.index(random_int(seed: $seed, max: 3))
+        let error_msg = $error_messages.index(random_int(seed: $seed, max: 3))
+
+        # 15% Syslog
+        let facilities = ["kern", "user", "daemon", "auth", "syslog"]
+        let severities = ["info", "notice", "warning", "error"]
+        let syslog_messages = ["Connection established", "User login successful", "Service restarted", "Failed password attempt"]
+        let facility = $facilities.index(random_int(seed: $seed, max: 4))
+        let severity = $severities.index(random_int(seed: $seed, max: 3))
+        let syslog_msg = $syslog_messages.index(random_int(seed: $seed, max: 3))
+
+        let ts = now().ts_strftime("%d/%b/%Y:%H:%M:%S -0800")
+        let ts_short = now().ts_strftime("%b %d %H:%M:%S")
+        let bytes = random_int(seed: $seed, min: 100, max: 50000)
+        let pid = random_int(seed: $seed, min: 1000, max: 9999)
+        let pri = random_int(seed: $seed, max: 191)
+
+        root._raw = if $type_roll < 70 {
+          "%s - - [%s] \"%s %s HTTP/1.1\" %s %s".format($ip, $ts, $method, $path, $status.string(), $bytes.string())
+        } else if $type_roll < 85 {
+          "[%s] [%s] [pid %s] %s".format($ts, $level, $pid.string(), $error_msg)
+        } else {
+          "<%s>%s %s %s[%s] %s".format($pri.string(), $ts_short, hostname(), $facility, $pid.string(), $syslog_msg)
+        }
+
+        root.sourcetype = if $type_roll < 70 { "access_combined" } else if $type_roll < 85 { "apache_error" } else { "syslog" }
+        root.source = if $type_roll < 70 { "/var/log/httpd/access_log" } else if $type_roll < 85 { "/var/log/httpd/error_log" } else { "/var/log/messages" }
+        root.host = hostname()
+        root.region = $region
+
+  pipeline:
+    processors:
+      - bloblang: |
+          # Route by sourcetype to appropriate index
+          # ALL regions sent (no filtering)
+          meta "index" = if this.sourcetype == "access_combined" {
+            "web"
+          } else if this.sourcetype == "apache_error" {
+            "security"
+          } else {
+            "os"
+          }
+
+          meta "sourcetype" = this.sourcetype
+          meta "host" = this.host
+          meta "source" = this.source
+          meta "region" = this.region
+
+          root = this
+
+  output:
+    switch:
+      cases:
+        - check: meta("index") == "web"
+          output:
+            processors:
+              - bloblang: |
+                  root.event = this._raw
+                  root.time = now().ts_unix()
+                  root.host = meta("host")
+                  root.source = meta("source")
+                  root.sourcetype = meta("sourcetype")
+                  root.index = "web"
+                  root.fields = {
+                    "region": meta("region")
+                  }
+            http_client:
+              url: http://hec:8088/services/collector/event
+              verb: POST
+              headers:
+                Authorization: "Splunk demo"
+                Content-Type: application/json
+
+        - check: meta("index") == "security"
+          output:
+            processors:
+              - bloblang: |
+                  root.event = this._raw
+                  root.time = now().ts_unix()
+                  root.host = meta("host")
+                  root.source = meta("source")
+                  root.sourcetype = meta("sourcetype")
+                  root.index = "security"
+                  root.fields = {
+                    "region": meta("region")
+                  }
+            http_client:
+              url: http://hec:8088/services/collector/event
+              verb: POST
+              headers:
+                Authorization: "Splunk demo"
+                Content-Type: application/json
+
+        - check: true
+          output:
+            processors:
+              - bloblang: |
+                  root.event = this._raw
+                  root.time = now().ts_unix()
+                  root.host = meta("host")
+                  root.source = meta("source")
+                  root.sourcetype = meta("sourcetype")
+                  root.index = "os"
+                  root.fields = {
+                    "region": meta("region")
+                  }
+            http_client:
+              url: http://hec:8088/services/collector/event
+              verb: POST
+              headers:
+                Authorization: "Splunk demo"
+                Content-Type: application/json
