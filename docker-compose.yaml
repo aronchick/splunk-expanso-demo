@@ -21,6 +21,7 @@ services:
 
   edge:
     image: ghcr.io/expanso-io/expanso-edge:nightly
+    pull_policy: always
     environment:
       - EXPANSO_EDGE_BOOTSTRAP_URL=${EXPANSO_EDGE_BOOTSTRAP_URL}
       - EXPANSO_EDGE_BOOTSTRAP_TOKEN=${EXPANSO_EDGE_BOOTSTRAP_TOKEN}

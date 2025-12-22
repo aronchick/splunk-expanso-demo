@@ -86,6 +86,22 @@ config:
           interval: 1s
 
   output:
+    processors:
+      - bloblang: |
+          root.event = {
+            "sensor_id": this.sensor_id,
+            "window_start": this.window_start,
+            "readings": this.readings,
+            "battery_avg_pct": this.battery_avg_pct,
+            "signal_avg_dbm": this.signal_avg_dbm,
+            "event_count": this.event_count,
+            "aggregation": "10s_window"
+          }
+          root.time = now().ts_unix()
+          root.host = this.host
+          root.source = "iot-aggregator"
+          root.sourcetype = "iot:sensor:aggregated"
+          root.index = "metrics"
     http_client:
       url: http://hec:8088/services/collector/event
       verb: POST
@@ -94,19 +110,3 @@ config:
         Content-Type: application/json
       timeout: 5s
       retries: 3
-      processors:
-        - bloblang: |
-            root.event = {
-              "sensor_id": this.sensor_id,
-              "window_start": this.window_start,
-              "readings": this.readings,
-              "battery_avg_pct": this.battery_avg_pct,
-              "signal_avg_dbm": this.signal_avg_dbm,
-              "event_count": this.event_count,
-              "aggregation": "10s_window"
-            }
-            root.time = now().ts_unix()
-            root.host = this.host
-            root.source = "iot-aggregator"
-            root.sourcetype = "iot:sensor:aggregated"
-            root.index = "metrics"
