@@ -43,6 +43,10 @@ def log_event(event_data):
     source = event_data.get('source', 'unknown')
     event = event_data.get('event', '')
 
+    # Extract region from fields (sent by pipeline) or fall back to server's region
+    fields = event_data.get('fields', {})
+    region = fields.get('region', REGION)
+
     # Handle event as string or dict
     if isinstance(event, dict):
         event_str = json.dumps(event)
@@ -58,7 +62,7 @@ def log_event(event_data):
         'source': source,
         'sourcetype': sourcetype,
         'index': index,
-        'region': REGION,
+        'region': region,
         'event': event_str
     }
 
